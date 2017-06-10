@@ -6,7 +6,7 @@
 每个变量都有两个标志：`requires_grad`和`volatile`。它们都允许从梯度计算中精细地排除子图，并可以提高效率。
 
 ### `requires_grad`
-如果有一个单一的输入操作需要梯度，它的输出也需要梯度。相反，只有所有输入都不需要梯度，输出才不需要。如果其中所有的变量都不需要梯度进行，后向计算不会在子图中执行。
+如果有一个单一的输入操作需要梯度，它的输出也需要梯度。相反，只有所有输入都不需要梯度，输出才不需要。如果其中所有的变量都不需要梯度进行，后向计算不会在子图中执行。(如果子图中所有的变量都不需要计算梯度，后向计算就不会在子图中执行)
 
 ```python
 >>> x = Variable(torch.randn(5, 5))
@@ -19,8 +19,7 @@ False
 >>> b.requires_grad
 True
 ```
-这个标志特别有用，当您想要冻结部分模型时，或者您事先知道不会使用某些参数的梯度。例如，如果要对预先训练的CNN进行优化，只要切换冻结模型中的`requires_grad`标志就足够了，直到计算到最后一层才会保存中间缓冲区，其中的仿射变换将使用需要梯度的权重并且网络的输出也将需要它们。
-
+这个标志特别有用，当您想要冻结部分模型时，或者您事先知道不会使用某些参数的梯度。例如，如果要对预先训练的CNN进行优化，只要切换冻结模型中的`requires_grad`标志就足够了，直到计算到最后一层才会保存中间缓冲区，其中的仿射变换将使用需要梯度的权重并且网络的输出也将需要它们。（因为最后一层的仿射变换所用到的权重需要梯度，同样网络的输出也需要梯度。）
 ```python
 model = torchvision.models.resnet18(pretrained=True)
 for param in model.parameters():
@@ -36,7 +35,7 @@ optimizer = optim.SGD(model.fc.parameters(), lr=1e-2, momentum=0.9)
 ### `volatile`
 纯粹的inference模式下推荐使用`volatile`，当你确定你甚至不会调用`.backward()`时。它比任何其他自动求导的设置更有效——它将使用绝对最小的内存来评估模型。`volatile`也决定了`require_grad is False`。
 
-`volatile`不同于`require_grad`的传递。如果一个操作甚至只有有一个`volatile`的输入，它的输出也将是`volatile`。`Volatility`比“不需要梯度”更容易传递——只需要一个`volatile`的输入即可得到一个`volatile`的输出，相对的，需要所有的输入“不需要梯度”才能得到不需要梯度的输出。使用volatile标志，您不需要更改模型参数的任何设置来用于inference。创建一个`volatile`的输入就够了，这将保证不会保存中间状态。
+`volatile`不同于`require_grad`的传递。（`Volatile`与`require_grad`的不同之处在于他们标志的传递。）如果一个操作甚至只有有一个`volatile`的输入，它的输出也将是`volatile`。`Volatility`比“不需要梯度”更容易传递——只需要一个`volatile`的输入即可得到一个`volatile`的输出，相对的，需要所有的输入“不需要梯度”才能得到不需要梯度的输出。使用volatile标志，您不需要更改模型参数的任何设置来用于inference。创建一个`volatile`的输入就够了，这将保证不会保存中间状态。
 ```python
 >>> regular_input = Variable(torch.randn(5, 5))
 >>> volatile_input = Variable(torch.randn(5, 5), volatile=True)
@@ -63,7 +62,7 @@ True
 
 １．覆盖梯度计算所需的值。这就是为什么变量不支持`log_`。它的梯度公式需要原始输入，而虽然通过计算反向操作可以重新创建它，但在数值上是不稳定的，并且需要额外的工作，这往往会与使用这些功能的目的相悖。
 
-２．每个in-place操作实际上需要实现重写计算图。不合适的版本只需分配新对象并保留对旧图的引用，而in-place操作则需要将所有输入的`creator`更改为表示此操作的`Function`。这就比较棘手，特别是如果有许多变量引用相同的存储（例如通过索引或转置创建的），并且如果被修改输入的存储被任何其他`Variable`引用，则in-place函数实际上会抛出错误。
+２．每个in-place操作实际上需要实现重写计算图。不合适的版本（out-of-place）只需分配新对象并保留对旧图的引用，而in-place操作则需要将所有输入的`creator`更改为表示此操作的`Function`。这就比较棘手，特别是如果有许多变量引用相同的存储（例如通过索引或转置创建的），并且如果被修改输入的存储被任何其他`Variable`引用，则in-place函数实际上会抛出错误。
 
 ## In-place正确性检查
 每个变量保留有version counter，它每次都会递增，当在任何操作中被使用时。当`Function`保存任何用于后向的tensor时，还会保存其包含变量的version counter。一旦访问`self.saved_tensors`，它将被检查，如果它大于保存的值，则会引起错误。
