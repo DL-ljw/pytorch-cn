@@ -1,3 +1,4 @@
+<script type="text/javascript" src="path-to-MathJax/MathJax.js"></script>
 # torch.nn
 
 ## Parameters
